@@ -1,0 +1,160 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             String        @id @default(uuid())
+  fullName       String
+  email          String        @unique
+  phone          String?
+  passwordHash   String
+  role           String        @default("STAFF") // "PATIENT", "STAFF", "ADMIN"
+  accountStatus  String        @default("ACTIVE") // "ACTIVE", "INACTIVE"
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  approvedAppointments Appointment[] @relation("ApprovedByStaff")
+  auditEvents          AuditEvent[]  @relation("ActorUser")
+}
+
+model PatientProfile {
+  id            String               @id @default(uuid())
+  userId        String?
+  fullName      String
+  age           Int
+  contactNumber String
+  email         String?
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+
+  requests      AppointmentRequest[]
+}
+
+model Specialty {
+  id          String               @id @default(uuid())
+  name        String               @unique
+  description String
+  iconName    String               @default("Activity")
+  isActive    Boolean              @default(true)
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  doctors     Doctor[]
+  requests    AppointmentRequest[]
+}
+
+model Doctor {
+  id                         String               @id @default(uuid())
+  doctorCode                 String               @unique
+  fullName                   String
+  specialtyId                String
+  qualifications             String
+  experienceYears            Int
+  languages                  String               @default("English")
+  consultationFee            Float                @default(100.0)
+  profileImageUrl            String?
+  isActive                   Boolean              @default(true)
+  appointmentDurationMinutes Int                  @default(30)
+  createdAt                  DateTime             @default(now())
+  updatedAt                  DateTime             @updatedAt
+
+  specialty                  Specialty            @relation(fields: [specialtyId], references: [id])
+  schedules                  DoctorSchedule[]
+  appointments               Appointment[]
+  requestedAppointments      AppointmentRequest[] @relation("PreferredDoctor")
+}
+
+model DoctorSchedule {
+  id                         String   @id @default(uuid())
+  doctorId                   String
+  dayOfWeek                  Int      // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+  startTime                  String   // e.g. "09:00"
+  endTime                    String   // e.g. "17:00"
+  breakStartTime             String?  // e.g. "13:00"
+  breakEndTime               String?  // e.g. "14:00"
+  appointmentDurationMinutes Int      @default(30)
+  isActive                   Boolean  @default(true)
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
+
+  doctor                     Doctor   @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+}
+
+model Room {
+  id           String        @id @default(uuid())
+  roomNumber   String        @unique
+  department   String
+  isActive     Boolean       @default(true)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  appointments Appointment[]
+}
+
+model AppointmentRequest {
+  id                          String          @id @default(uuid())
+  publicReference             String          @unique
+  patientProfileId            String?
+  patientName                 String
+  patientAge                  Int
+  contactNumber               String
+  email                       String?
+  preferredContactMethod      String          @default("PHONE")
+  problemSummary              String
+  symptomDescription          String
+  specialtyId                 String
+  preferredDoctorId           String?
+  preferredDate               String          // YYYY-MM-DD
+  preferredTimeRange          String          @default("MORNING") // "MORNING", "AFTERNOON", "EVENING"
+  visitType                   String          @default("IN_PERSON") // "IN_PERSON", "VIDEO_CONSULT"
+  status                      String          @default("PENDING_REVIEW") // "PENDING_REVIEW", "CONFIRMED", "REJECTED", "CANCELLED", "COMPLETED"
+  patientFacingRejectionReason String?
+  internalStaffNotes          String?
+  privacyConsent              Boolean         @default(true)
+  submittedAt                 DateTime        @default(now())
+  updatedAt                   DateTime        @updatedAt
+
+  patientProfile              PatientProfile? @relation(fields: [patientProfileId], references: [id])
+  specialty                   Specialty       @relation(fields: [specialtyId], references: [id])
+  preferredDoctor             Doctor?         @relation("PreferredDoctor", fields: [preferredDoctorId], references: [id])
+  appointment                 Appointment?
+}
+
+model Appointment {
+  id                 String             @id @default(uuid())
+  requestId          String             @unique
+  doctorId           String
+  roomId             String
+  startAt            DateTime
+  endAt              DateTime
+  status             String             @default("CONFIRMED") // "CONFIRMED", "CANCELLED", "COMPLETED"
+  approvedByUserId   String?
+  approvedAt         DateTime           @default(now())
+  cancellationReason String?
+  notes              String?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  request            AppointmentRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  doctor             Doctor             @relation(fields: [doctorId], references: [id])
+  room               Room               @relation(fields: [roomId], references: [id])
+  approvedBy         User?              @relation("ApprovedByStaff", fields: [approvedByUserId], references: [id])
+}
+
+model AuditEvent {
+  id          String   @id @default(uuid())
+  actorUserId String?
+  actorRole   String   @default("SYSTEM")
+  entityType  String
+  entityId    String
+  action      String
+  metadata    String?  // JSON string
+  timestamp   DateTime @default(now())
+
+  actor       User?    @relation("ActorUser", fields: [actorUserId], references: [id])
+}
